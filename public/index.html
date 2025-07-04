@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shams Reports</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
+  />
+  <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+  <style>
+    body { background: #fff; }
+    .header-row { display: flex; align-items: center; gap: 1rem; }
+    #resultTable {
+      border-collapse: collapse;
+    }
+    #resultTable th, #resultTable td {
+      font-size: 0.8rem;
+      border: 1px solid #ddd;
+    }
+    .is-hidden { display: none; }
+    /* Center the Reports title horizontally */
+    .headingg {
+      flex: 1;
+      text-align: center;
+      text-transform: uppercase;
+      color:#EF6F53;
+    }
+
+    /* Custom fetch button color */
+    .btn-fetch {
+      background-color: #1976d2 !important;
+      border-color: #1976d2 !important;
+      color: #fff;
+    }
+
+    /* Hover effect for Download CSV button */
+    #csvBtn:hover {
+      background-color: #1976d2 !important;
+      color: #fff !important;
+      border-color: #1976d2 !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="mt-4 header-row">
+      <img src="/uploads/logo.webp" alt="Logo" width="250" />
+    </div>
+
+    <h1 class="title has-text-centered headingg">Reports</h1>
+    <form id="filterForm" class="box p-4">
+      <div class="field is-horizontal account-row mb-3">
+        <div class="field-label is-normal"><label class="label">Account</label></div>
+        <div class="field-body">
+          <input id="account" class="input" type="text" value="shams" disabled required />
+        </div>
+      </div>
+
+      <div class="columns is-variable is-2 mb-3">
+        <div class="column">
+          <label class="label">Start datetime (local)</label>
+          <input id="start" class="input" type="datetime-local" required />
+        </div>
+        <div class="column">
+          <label class="label">End datetime (local)</label>
+          <input id="end" class="input" type="datetime-local" required />
+        </div>
+      </div>
+
+      <!-- Report type dropdown removed; script now fetches inbound + outbound queue calls automatically -->
+
+      <div class="field has-text-centered">
+        <button type="submit" class="button is-primary btn-fetch">Fetch Report</button>
+      </div>
+    </form>
+
+    <div id="loading" class="notification is-info is-light is-hidden">
+      Loading… Please wait.
+    </div>
+    <div id="errorBox" class="notification is-danger is-light is-hidden"></div>
+
+    <!-- Record count will be displayed here -->
+    <div id="stats" class="notification is-primary is-light is-hidden"></div>
+
+    <div class="table-container">
+      <table id="resultTable" class="table is-striped is-hoverable is-fullwidth"></table>
+    </div>
+
+    <div class="has-text-centered mt-3">
+      <button id="csvBtn" class="button is-link is-light" disabled>Download CSV</button>
+    </div>
+
+    <div class="mt-4 has-text-centered">Copyright 2025. All Rights Reserved by Multycomm</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.2/build/global/luxon.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

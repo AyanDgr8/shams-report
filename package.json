@@ -1,0 +1,26 @@
+{
+  "name": "voicemeetme",
+  "version": "1.0.0",
+  "main": "cdrFetcher.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "access": "node -r dotenv/config accessToken.js",
+    "reports": "node -r dotenv/config reportFetcher.js",
+    "agents": "node -r dotenv/config agentStatus.js",
+    "cdrs": "node -r dotenv/config reportFetcher.js cdrs",
+    "queueCalls": "node -r dotenv/config reportFetcher.js queueCalls",
+    "queueOutbound": "node -r dotenv/config reportFetcher.js queueOutboundCalls",
+    "campaigns": "node -r dotenv/config reportFetcher.js campaignsActivity"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.10.0",
+    "dotenv": "^17.0.0",
+    "express": "^5.1.0",
+    "ms": "^2.1.3"
+  }
+}
