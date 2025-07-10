@@ -151,6 +151,36 @@ export async function fetchReport(report, tenant, params = {}) {
               'agent_subdisposition2'
             ].join(',')
           }),
+          // Request all relevant columns for campaign activity
+          ...(report === 'campaignsActivity' && {
+            fields: [
+              'datetime',
+              'timestamp',
+              'campaign_name',
+              'campaign_type',
+              'lead_name',
+              'lead_first_name',
+              'lead_last_name',
+              'lead_number',
+              'lead_ticket_id',
+              'lead_type',
+              'agent_name',
+              'agent_extension',
+              'agent_talk_time',
+              'lead_history',
+              'call_id',
+              'campaign_timestamps',
+              'media_recording_id',
+              'recording_filename',
+              'status',
+              'customer_wait_time_sla',
+              'customer_wait_time_over_sla',
+              'disposition',
+              'hangup_cause',
+              'lead_disposition',
+              'answered_time'
+            ].join(',')
+          }),
           ...(startKey && { start_key: startKey })
         };
 

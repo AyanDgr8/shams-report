@@ -11,11 +11,6 @@
   <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
   <style>
     body { background: #fff; }
-    /* Reduce global paddings */
-    .container { padding: 0.5rem; }
-    .box, .p-4 { padding: 0.5rem !important; }
-    .column { padding: 0.75rem !important; }
-    #filtersBox { padding: 0.75rem !important; }
     .header-row { display: flex; align-items: center; gap: 1rem; }
     #resultTable {
       border-collapse: collapse;
@@ -23,19 +18,14 @@
     #resultTable th, #resultTable td {
       font-size: 0.8rem;
       border: 1px solid #ddd;
-      padding: 0.15rem 0.25rem;
     }
     .is-hidden { display: none; }
     /* Center the Reports title horizontally */
     .headingg {
-      position:absolute;
-      top:15px;
-      left:50%;
-      transform:translateX(-50%);
-      text-align:center;
-      text-transform:uppercase;
+      flex: 1;
+      text-align: center;
+      text-transform: uppercase;
       color:#EF6F53;
-      z-index:2;
     }
 
     /* Custom fetch button color */
@@ -43,8 +33,6 @@
       background-color: #1976d2 !important;
       border-color: #1976d2 !important;
       color: #fff;
-      padding: 0.1rem !important;
-      font-size: 0.8rem !important;
     }
 
     /* Hover effect for Download CSV button */
@@ -52,9 +40,7 @@
       background-color: #1976d2 !important;
       color: #fff !important;
       border-color: #1976d2 !important;
-      font-size: 0.8rem !important;
     }
-    
      /* Row background colors based on record type */
      .row-inbound {
       background-color: #e3f2fd; /* light blue */
@@ -70,54 +56,6 @@
     table.is-hoverable tbody tr:hover {
       background-color: inherit !important;
     }
-
-    /* Inner history tables */
-    .history-table {
-      border-collapse: collapse;
-      width: 100%;
-      min-width: 450px;
-    }
-    .history-table th, .history-table td {
-      border: 1px solid #dcdcdc;
-      font-size: 0.7rem;
-      padding: 2px 4px;
-      text-align: center;
-    }
-    .history-table thead {
-      background: #f5f5f5;
-    }
-
-    .account-row .label.is-small {
-      font-size: 0.75rem;
-      padding: 0.1rem 0.25rem;
-    }
-    .account-row input.is-small {
-      font-size: 0.75rem;
-      padding: 0.1rem 0.25rem;
-    }
-    /* Layout: form uses 30 % of the viewport height; table 50 % */
-    #filterForm{
-      max-height:40vh;   /* 30 % of screen height */
-      overflow-y:auto;   /* scroll if it grows taller */
-    }
-    .table-container{
-      max-height:40vh;   /* 50 % of screen height */
-      overflow-y:auto;   /* scroll the table body */
-    }
-
-    /* --- Filter form compact spacing --- */
-    #filterForm .column{
-      padding-top:0.25rem !important;
-      padding-bottom:0.25rem !important;
-    }
-    #filterForm .field{
-      margin-bottom:0.25rem !important;
-    }
-    /* Smaller labels for datetime inputs (labels that are not .is-small) */
-    #filterForm .label:not(.is-small){
-      font-size:0.8rem;
-      margin-bottom:0.1rem;
-    }
   </style>
 </head>
 <body>
@@ -129,30 +67,27 @@
     <h1 class="title has-text-centered headingg">Reports</h1>
     <form id="filterForm" class="box p-4">
       <div class="field is-horizontal account-row mb-3">
-        <div class="field-label is-normal"><label class="label is-small">Account</label></div>
+        <div class="field-label is-normal"><label class="label">Account</label></div>
         <div class="field-body">
-          <input id="account" class="input is-small" type="text" value="shams" disabled required style="max-width: 120px;" />
+          <input id="account" class="input" type="text" value="shams" disabled required />
         </div>
       </div>
 
       <div class="columns is-variable is-2 mb-3">
         <div class="column">
-          <label class="label">Start datetime (UTC)</label>
+          <label class="label">Start datetime (local)</label>
           <input id="start" class="input" type="datetime-local" required />
         </div>
         <div class="column">
-          <label class="label">End datetime (UTC)</label>
+          <label class="label">End datetime (local)</label>
           <input id="end" class="input" type="datetime-local" required />
         </div>
       </div>
 
-      <!-- Search filters (initially visible) -->
-      <div id="filtersBox" class="box p-4 mb-4">
-        <div id="filtersGrid" class="columns is-multiline"></div>
-      </div>
+      <!-- Report type dropdown removed; script now fetches inbound + outbound queue calls automatically -->
 
       <div class="field has-text-centered">
-        <button id="fetchBtn" type="submit" class="button is-primary btn-fetch" disabled>Fetch Report</button>
+        <button type="submit" class="button is-primary btn-fetch">Fetch Report</button>
       </div>
     </form>
 
@@ -164,15 +99,21 @@
     <!-- Record count will be displayed here -->
     <div id="stats" class="notification is-primary is-light is-hidden"></div>
 
+    <!-- Search filters for each column -->
+    <div id="filtersBox" class="box p-4">
+      <h2 class="title is-6 mb-3">Search Filters</h2>
+      <div id="filtersGrid" class="columns is-multiline"></div>
+    </div>
+
     <div class="table-container">
-      <table id="resultTable" class="table is-fullwidth"></table>
+      <table id="resultTable" class="table is-striped is-hoverable is-fullwidth"></table>
     </div>
 
     <div class="has-text-centered mt-3">
       <button id="csvBtn" class="button is-link is-light" disabled>Download CSV</button>
     </div>
 
-    <div class="mt-4 has-text-centered">Copyright @ 2025. All Rights Reserved by Multycomm</div>
+    <div class="mt-4 has-text-centered">Copyright 2025. All Rights Reserved by Multycomm</div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.2/build/global/luxon.min.js"></script>
