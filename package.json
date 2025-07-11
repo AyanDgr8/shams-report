@@ -11,7 +11,8 @@
     "cdrs": "node -r dotenv/config reportFetcher.js cdrs",
     "queueCalls": "node -r dotenv/config reportFetcher.js queueCalls",
     "queueOutbound": "node -r dotenv/config reportFetcher.js queueOutboundCalls",
-    "campaigns": "node -r dotenv/config reportFetcher.js campaignsActivity"
+    "campaigns": "node -r dotenv/config reportFetcher.js campaignsActivity",
+    "dev": "NODE_OPTIONS=--max_old_space_size=4096 nodemon server.js"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +22,9 @@
     "axios": "^1.10.0",
     "dotenv": "^17.0.0",
     "express": "^5.1.0",
-    "ms": "^2.1.3"
+    "music-metadata": "^11.6.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   }
 }

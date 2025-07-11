@@ -35,7 +35,6 @@ const FILTER_COLUMNS = new Set([
   'Call ID',
   'Caller Id Number',
   'Agent Disposition',
-  'Caller Id / Lead Name',
   'Disposition',
   // there is no standalone "Agent Extension" header; the above covers it
   'Agent name',
@@ -79,7 +78,6 @@ function inputToDubaiIso(val) {
 
 // Required column order for the combined Queue report
 const HEADERS = [
-  'S.No.',
   'Type',
   'Call ID',
   'Queue / Campaign Name',
@@ -91,8 +89,6 @@ const HEADERS = [
   'Wait Duration',
   'Talk Duration',
   'Agent Disposition',
-  'Sub_disp_1',
-  'Sub_disp_2',
   'Callee ID number',
   'Status',
   'Campaign Type',
@@ -262,16 +258,6 @@ function computeAbandoned(row) {
 // Normalize inbound/outbound API rows to the unified schema expected by HEADERS
 function normalizeRow(row, source) {
   if (source === 'camp') {
-    // helper to safely extract subdisposition names (supports object or array)
-    const [sub1, sub2] = (() => {
-      let sd = row.agent_subdisposition ?? null;
-      if (Array.isArray(sd)) sd = sd[0];
-      if (!sd || typeof sd !== 'object') return ['', ''];
-      const first = sd.name ?? '';
-      const second = sd.subdisposition?.name ?? '';
-      return [first, second];
-    })();
-
     return {
       'Type': 'Campaign',
       'Call ID': row.call_id ?? row.callid ?? '',
@@ -288,8 +274,6 @@ function normalizeRow(row, source) {
       'Caller Id Number': row.agent_extension ?? '',
       'Talk Duration': row.agent_talk_time ?? '',
       'Agent Disposition': row.agent_disposition ?? '',
-      'Sub_disp_1': sub1,
-      'Sub_disp_2': sub2,
       'Agent History': `${historyToHtml(row.agent_history ?? [])}${leadHistoryToHtml(row.lead_history ?? [])}`,
       'Called Time': row.timestamp ?? row.datetime ?? '',
       'Answered time': '',
@@ -308,29 +292,6 @@ function normalizeRow(row, source) {
 
   // inbound / outbound queues
   const isOutbound = source === 'out';
-  // helper to safely extract subdisposition names (supports object or array)
-  const [sub1, sub2] = (() => {
-    let sd = row.agent_subdisposition ?? null;
-    if (Array.isArray(sd)) sd = sd[0];
-    if (!sd || typeof sd !== 'object') return ['', ''];
-    const first = sd.name ?? '';
-    const second = sd.subdisposition?.name ?? '';
-    return [first, second];
-  })();
-
-  // Derive Agent name from first entry in agent_history (if present)
-  let agentName = '';
-  try {
-    let hist = row.agent_history;
-    if (typeof hist === 'string') hist = JSON.parse(hist);
-    if (Array.isArray(hist) && hist.length) {
-      const h0 = hist[0];
-      const fn = h0.first_name ?? '';
-      const ln = h0.last_name ?? '';
-      agentName = `${fn} ${ln}`.trim();
-    }
-  } catch {}
-
   return {
     'Type': isOutbound ? 'Outbound' : 'Inbound',
     'Call ID': row.call_id ?? row.callid ?? '',
@@ -344,324 +305,98 @@ function normalizeRow(row, source) {
     'Talk Duration': row.talked_duration ?? '',
     'Callee ID number': isOutbound ? (row.to ?? '') : (row.callee_id_number ?? ''),
     'Agent Disposition': row.agent_disposition ?? '',
-    'Sub_disp_1': sub1,
-    'Sub_disp_2': sub2,
     'Queue History': queueHistoryToHtml(row.queue_history ?? []),
     'Agent History': historyToHtml(row.agent_history ?? []),
     'Status': '',
     'Campaign Type': '',
     'Abandoned': isOutbound ? '' : computeAbandoned(row),
-    'Agent name': agentName,
     'Recording': row.media_recording_id ?? row.recording_filename ?? ''
   };
 }
 
-// Render table rows in CHUNK_SIZE batches so the UI becomes responsive quickly.
-const CHUNK_SIZE = 500;
-
-function renderRowsHtml(rows, startSerial = 1) {
-  let serial = startSerial;
-  return rows
-    .map(rec => {
-      const tds = HEADERS.map(h => {
-        if (h === 'S.No.') return `<td>${serial}</td>`;
-        let v = rec[h];
-        if (v == null) v = '';
-
-        // Render recording inline with audio controls (button removed)
-        if (h === 'Recording') {
-          if (v) {
-            const id = v.replace(/[^\w]/g, '');
-            const src = `/api/recordings/${v}?account=${encodeURIComponent(tenantAccount)}`;
-            const metaUrl = `/api/recordings/${v}/meta?account=${encodeURIComponent(tenantAccount)}`;
-            return `<td style="text-align:center"><audio class="recording-audio" controls preload="none" src="${src}" data-meta="${metaUrl}" data-id="${id}" style="max-width:200px"></audio><br><span class="rec-dur" id="dur_${id}"></span></td>`;
-          }
-          return '<td></td>';
-        }
-
-        if (RAW_COLUMNS.has(h.toLowerCase())) {
-          return `<td>${v}</td>`;
-        }
-
-        if (typeof v === 'object') {
-          v = JSON.stringify(v);
-        } else if (typeof v === 'number') {
-          if (v > 1_000_000_000) {
-            const ms = v > 10_000_000_000 ? v : v * 1000;
-            v = isoToLocal(new Date(ms).toISOString());
-          } else {
-            v = secondsToHMS(v);
-          }
-        } else if (typeof v === 'string' && /^\d+$/.test(v)) {
-          const num = Number(v);
-          if (!Number.isNaN(num) && num > 1_000_000_000) {
-            const ms = v.length > 10 ? num : num * 1000;
-            v = isoToLocal(new Date(ms).toISOString());
-          }
-        } else if (typeof v === 'string' && /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/.test(v)) {
-          v = isoToLocal(v);
-        }
-        return `<td>${v}</td>`;
-      });
-      const type = rec['Type'];
-      const rowClass = type === 'Inbound' ? 'row-inbound' : type === 'Outbound' ? 'row-outbound' : 'row-campaign';
-      serial += 1;
-      return `<tr class="${rowClass}">${tds.join('')}</tr>`;
-    })
-    .join('');
-}
-
-// Incremental renderer
-function renderReportTableChunked(records, globalStartIdx = 0) {
+// Render using the fixed header order so we preserve column naming / sequence
+function renderReportTable(records) {
   if (!records.length) {
     table.innerHTML = '<caption>No results for selected range.</caption>';
     return;
   }
+  const thead = `<thead><tr>${HEADERS.map(h => `<th>${h}</th>`).join('')}</tr></thead>`;
+  const tbody = `<tbody>${records.map(rec => {
+    const type = rec['Type'];
+    const rowClass = type === 'Inbound' ? 'row-inbound' : type === 'Outbound' ? 'row-outbound' : 'row-campaign';
+    return `<tr class="${rowClass}">` + HEADERS.map(h => {
+      let v = rec[h];
+      if (v == null) v = '';
 
-  const theadHtml = `<thead><tr>${HEADERS.map(h => `<th>${h}</th>`).join('')}</tr></thead>`;
-  table.innerHTML = theadHtml + '<tbody></tbody>';
-  const tbodyEl = table.querySelector('tbody');
+      // Render audio player for Recording column
+      if (h === 'Recording') {
+        if (v) {
+          const src = `/api/recordings/${v}?account=${encodeURIComponent(tenantAccount)}`;
+          const metaUrl = `/api/recordings/${v}/meta?account=${encodeURIComponent(tenantAccount)}`;
+          // We'll fetch meta asynchronously and fill span#dur_<id>
+          return `<td><audio controls preload="metadata" src="${src}" data-meta="${metaUrl}"></audio> <span class="rec-dur" id="dur_${v.replace(/[^\w]/g,'')}"></span></td>`;
+        }
+        return '<td></td>';
+      }
 
-  let offset = 0;
-  function appendChunk() {
-    const slice = records.slice(offset, offset + CHUNK_SIZE);
-    tbodyEl.insertAdjacentHTML('beforeend', renderRowsHtml(slice, globalStartIdx + offset + 1));
-    offset += CHUNK_SIZE;
-    if (offset < records.length) {
-      // Yield back to event loop to keep UI responsive
-      setTimeout(appendChunk, 0);
-    } else {
-      // Once all rows rendered trigger duration fetch workers
-      afterRowsRendered();
-    }
-  }
+      // Skip any transformation for caller/callee IDs & names
+      if (RAW_COLUMNS.has(h.toLowerCase())) {
+        return `<td>${v}</td>`;
+      }
 
-  appendChunk();
-}
+      if (typeof v === 'object') {
+        v = JSON.stringify(v);
+      } else if (typeof v === 'number') {
+        if (v > 1_000_000_000) {
+          const ms = v > 10_000_000_000 ? v : v * 1000;
+          v = isoToLocal(new Date(ms).toISOString());
+        } else {
+          v = secondsToHMS(v);
+        }
+      } else if (typeof v === 'string' && /^\d+$/.test(v)) {
+        const num = Number(v);
+        if (num > 1_000_000_000) {
+          const ms = num > 10_000_000_000 ? num : num * 1000;
+          v = isoToLocal(new Date(ms).toISOString());
+        } else {
+          v = secondsToHMS(num);
+        }
+      } else if (typeof v === 'string' && /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/.test(v)) {
+        v = isoToLocal(v);
+      }
+      return `<td>${v}</td>`;
+    }).join('') + '</tr>';
+  }).join('')}</tbody>`;
+  table.innerHTML = thead + tbody;
 
-// Called after rows are fully appended for the current render
-function afterRowsRendered() {
-  // Re-run duration worker setup for new rows
-  const audioEls = Array.from(table.querySelectorAll('.recording-audio[data-meta]'));
+  // After table rendered, fetch durations for any audio elements that don't yet have them
+  const audioEls = Array.from(table.querySelectorAll('audio[data-meta]'));
+
   const MAX_CONCURRENT = 5;
   let idx = 0;
+
   async function worker() {
     while (idx < audioEls.length) {
       const el = audioEls[idx++];
-      const spanId = 'dur_' + el.dataset.id;
+      const spanId = 'dur_' + el.src.match(/recordings\/([^?]+)/)[1].replace(/[^\w]/g,'');
       const span = document.getElementById(spanId);
       if (!span || span.textContent) continue;
       try {
         const resp = await axios.get(el.dataset.meta);
         const dur = resp.data?.duration;
         if (typeof dur === 'number') {
-          span.textContent = ` Time:  ${secondsToHMS(Math.round(dur))}`;
+          span.textContent = ` Total Time :  ${secondsToHMS(Math.round(dur))}`;
         }
       } catch {}
     }
   }
+
+  // Kick off limited parallel workers
   Array.from({ length: Math.min(MAX_CONCURRENT, audioEls.length) }).forEach(worker);
 }
 
 let lastRecords = [];
 let currentFiltered = [];
-
-// Number of rows the server returns per endpoint request.
-// Keep this in sync with PAGE_SIZE so each click loads exactly
-// one UI page worth of data without requiring multiple round-trips.
-const SERVER_PAGE_SIZE = 500;
-
-// Pagination globals – keep it in sync with SERVER_PAGE_SIZE so every
-// UI page corresponds to exactly one server round-trip per endpoint.
-const PAGE_SIZE = 500;
-let currentPage = 1;
-
-// Server-side paging helpers
-let nextTokens = { in: null, out: null, camp: null };
-let baseQuery = {};
-
-// Buffers that hold rows fetched from the server but **not yet revealed**
-const buffers = { in: [], out: [], camp: [] };
-
-// Helper: derive epoch (ms) from a record for date comparisons
-function toEpoch(rec) {
-  const v = rec['Called Time'];
-  if (!v) return 0;
-  return typeof v === 'number' ? v : Date.parse(v);
-}
-
-// Deduplicate records by unique Call ID + Type combination
-function dedupRecords(list) {
-  const seen = new Map();
-  list.forEach(rec => {
-    const key = `${rec['Call ID'] || ''}|${rec.Type || ''}`;
-    if (!seen.has(key)) {
-      seen.set(key, rec);
-    }
-  });
-  return Array.from(seen.values());
-}
-
-// Pull up to PAGE_SIZE newest rows across the three buffers into lastRecords
-function revealNextBatch() {
-  const startLen = lastRecords.length;
-  while (lastRecords.length - startLen < PAGE_SIZE) {
-    // Pick newest record across buffers
-    let pickKey = null;
-    let pickRec = null;
-    ['in', 'out', 'camp'].forEach(k => {
-      if (!buffers[k].length) return;
-      const candidate = buffers[k][0];
-      if (!pickRec || toEpoch(candidate) > toEpoch(pickRec)) {
-        pickRec = candidate;
-        pickKey = k;
-      }
-    });
-    if (!pickKey) break; // buffers empty
-
-    lastRecords.push(buffers[pickKey].shift());
-
-    // Deduplicate on the fly to avoid counting duplicates toward the quota
-    lastRecords = dedupRecords(lastRecords);
-  }
-
-  // Ensure sort order after possible pushes
-  lastRecords.sort((a, b) => toEpoch(b) - toEpoch(a));
-}
-
-async function loadNextChunks() {
-  const promises = [];
-  // helper to fetch and append rows
-  const fetchChunk = (endpoint, tokenKey, normalizer) => {
-    const nxt = nextTokens[tokenKey];
-    if (nxt === null) return; // no more on server
-    const params = { ...baseQuery, limit: SERVER_PAGE_SIZE, ...(nxt && { startKey: nxt }) };
-    promises.push(
-      axios.get(endpoint, { params }).then(res => {
-        const { data: rows = [], next } = res.data || {};
-        nextTokens[tokenKey] = next ?? null;
-        const normalized = rows.map(normalizer);
-        buffers[tokenKey].push(...normalized);
-        buffers[tokenKey].sort((a, b) => toEpoch(b) - toEpoch(a));
-      })
-    );
-  };
-
-  fetchChunk('/api/reports/queueCalls', 'in', r => normalizeRow(r, 'in'));
-  fetchChunk('/api/reports/queueOutboundCalls', 'out', r => normalizeRow(r, 'out'));
-  fetchChunk('/api/reports/campaignsActivity', 'camp', r => normalizeRow(r, 'camp'));
-
-  if (promises.length) {
-    await Promise.all(promises);
-  }
-
-  // If none of the endpoints returned a next token but we still got exactly
-  // SERVER_PAGE_SIZE rows on the previous page, attempt time-window paging.
-  const noMoreTokens = Object.values(nextTokens).every(v => v === null);
-  if (noMoreTokens) {
-    // Determine oldest Called Time among currently loaded rows
-    const oldest = lastRecords.reduce((min, r) => {
-      const ts = toEpoch(r);
-      return (min === null || ts < min) ? ts : min;
-    }, null);
-
-    if (oldest) {
-      // oldest may be in seconds (10 digits) or milliseconds (13). Ensure ms.
-      const oldestMs = oldest < 1_000_000_000_000 ? oldest * 1000 : oldest;
-      const newEndIso = new Date(oldestMs - 1000).toISOString();
-      const timeParams = { ...baseQuery, end: newEndIso, limit: SERVER_PAGE_SIZE };
-      const [inRes, outRes, campRes] = await Promise.all([
-        axios.get('/api/reports/queueCalls', { params: timeParams }),
-        axios.get('/api/reports/queueOutboundCalls', { params: timeParams }),
-        axios.get('/api/reports/campaignsActivity', { params: timeParams })
-      ]);
-
-      [inRes, outRes, campRes].forEach((res, idx) => {
-        const rows = res.data?.data || [];
-        if (!rows.length) return;
-        const type = idx === 0 ? 'in' : idx === 1 ? 'out' : 'camp';
-        const norm = rows.map(r => normalizeRow(r, type));
-        buffers[type].push(...norm);
-        buffers[type].sort((a, b) => toEpoch(b) - toEpoch(a));
-      });
-    }
-  }
-
-  // After network / buffer work, reveal next blended batch and refresh UI
-  revealNextBatch();
-
-  // Refresh filters/totals
-  const grid = document.getElementById('filtersGrid');
-  const anyFilter = grid && Array.from(grid.querySelectorAll('[data-col]')).some(el => el.value.trim() !== '');
-  if (!anyFilter) {
-    currentFiltered = [...lastRecords];
-    renderCurrentPage();
-    return;
-  }
-  applyFilters();
-  renderCurrentPage();
-}
-
-// Render the records of the current page and update pagination controls
-function renderCurrentPage() {
-  const totalPages = Math.max(1, Math.ceil(currentFiltered.length / PAGE_SIZE));
-  // Clamp currentPage within valid range
-  if (currentPage > totalPages) currentPage = totalPages;
-  if (currentPage < 1) currentPage = 1;
-
-  const startIdx = (currentPage - 1) * PAGE_SIZE;
-  const pageSlice = currentFiltered.slice(startIdx, startIdx + PAGE_SIZE);
-  renderReportTableChunked(pageSlice, startIdx);
-
-  // Update type totals (cumulative across all revealed pages)
-  showTotals(lastRecords);
-
-  // Build / update pagination UI
-  let nav = document.getElementById('pageNav');
-  if (!nav) {
-    nav = document.createElement('nav');
-    nav.id = 'pageNav';
-    nav.className = 'pagination is-small';
-    // Insert after the results table
-    table.parentNode.insertBefore(nav, table.nextSibling);
-  }
-
-  // Determine if more data might exist beyond currentFiltered
-  const buffersEmpty = !buffers.in.length && !buffers.out.length && !buffers.camp.length;
-  const noMoreTokens = Object.values(nextTokens).every(v => v === null);
-  const mayHaveMore = !(buffersEmpty && noMoreTokens && currentPage === totalPages);
-
-  const prevDisabled = currentPage === 1 ? 'disabled' : '';
-  const nextDisabled = mayHaveMore ? '' : 'disabled';
-  nav.innerHTML = `
-    <a class="pagination-previous" ${prevDisabled}>Previous</a>
-    <a class="pagination-next" ${nextDisabled}>Next</a>
-    <span class="ml-2">Page ${currentPage} of ${totalPages}</span>`;
-}
-
-// Global delegation for pagination buttons (attach once)
-document.addEventListener('click', async e => {
-  if (e.target.matches('.pagination-previous') && !e.target.hasAttribute('disabled')) {
-    currentPage--;
-    renderCurrentPage();
-  } else if (e.target.matches('.pagination-next') && !e.target.hasAttribute('disabled')) {
-    // Visual feedback: show ellipsis and disable while loading
-    const nextBtn = e.target;
-    nextBtn.textContent = '…';
-    nextBtn.setAttribute('disabled', '');
-
-    currentPage++;
-    const needRows = currentPage * PAGE_SIZE > lastRecords.length;
-    if (needRows) {
-      // Ensure we have at least one page worth of data buffered; if loadNextChunks
-      // returns nothing (no more rows) we will still re-render and buttons will disable.
-      await loadNextChunks();
-    }
-
-    // Re-render navigation + table (this will recreate Next/Prev buttons)
-    renderCurrentPage();
-  }
-});
 
 // Create filter UI dynamically once records are available
 function buildFilters() {
@@ -677,7 +412,7 @@ function buildFilters() {
     if (col === 'Type') {
       wrapper.innerHTML = `<div class="field"><label class="label is-small">${col}</label><div class="select is-small is-fullwidth"><select data-col="${col}" id="filter_${colId}"><option value="">All</option><option>Inbound</option><option>Outbound</option><option>Campaign</option></select></div></div>`;
     } else if (col === 'Status') {
-      wrapper.innerHTML = `<div class="field"><label class="label is-small">${col}</label><div class="select is-small is-fullwidth"><select data-col="${col}" id="filter_${colId}"><option value="">All</option><option>Success</option><option>Failed</option><option>Cooloff</option></select></div></div>`;
+      wrapper.innerHTML = `<div class="field"><label class="label is-small">${col}</label><div class="select is-small is-fullwidth"><select data-col="${col}" id="filter_${colId}"><option value="">All</option><option>Success</option><option>Failure</option><option>Cooloff</option></select></div></div>`;
     } else if (col === 'Campaign Type') {
       wrapper.innerHTML = `<div class="field"><label class="label is-small">${col}</label><div class="select is-small is-fullwidth"><select data-col="${col}" id="filter_${colId}"><option value="">All</option><option>Progressive</option><option>Preview</option></select></div></div>`;
     } else if (col === 'Abandoned') {
@@ -696,23 +431,6 @@ function buildFilters() {
   // Filters are already visible by default now
 }
 
-function computeTotals(list) {
-  let inCt = 0, outCt = 0, campCt = 0;
-  for (const r of list) {
-    if (r.Type === 'Inbound') inCt++;
-    else if (r.Type === 'Outbound') outCt++;
-    else campCt++; // Campaign
-  }
-  return { inCt, outCt, campCt, total: list.length };
-}
-
-function showTotals(list) {
-  if (!statsBox) return;
-  const { inCt, outCt, campCt, total } = computeTotals(list);
-  statsBox.innerHTML = `Inbound: <strong>${inCt}</strong> &nbsp;|&nbsp; Outbound: <strong>${outCt}</strong> &nbsp;|&nbsp; Campaign: <strong>${campCt}</strong> &nbsp;|&nbsp; Total: <strong>${total}</strong>`;
-  show(statsBox);
-}
-
 function applyFilters() {
   const grid = document.getElementById('filtersGrid');
   if (!grid) return;
@@ -723,19 +441,16 @@ function applyFilters() {
   });
   if (!Object.keys(filters).length) {
     currentFiltered = [...lastRecords];
-    renderCurrentPage();
+    renderReportTable(currentFiltered);
+    if (statsBox) {
+      statsBox.innerHTML = `<strong>${currentFiltered.length}</strong> records fetched`;
+      show(statsBox);
+    }
     return;
   }
   const normalize = s => s.toLowerCase().replace(/[^0-9a-z]/g, '');
-  const toDisplay = (col, v) => {
+  const toDisplay = v => {
     if (v == null) return '';
-
-    // Treat certain columns strictly as raw text (avoid timestamp heuristics)
-    const lowerCol = col.toLowerCase();
-    if (RAW_COLUMNS.has(lowerCol) || lowerCol === 'caller id / lead name') {
-      return String(v);
-    }
-
     // Numeric epoch seconds or milliseconds
     if (typeof v === 'number') {
       const ms = v > 10_000_000_000 ? v : v * 1000;
@@ -757,12 +472,11 @@ function applyFilters() {
   };
   currentFiltered = lastRecords.filter(rec => {
     return Object.entries(filters).every(([col, term]) => {
-      const cellVal = toDisplay(col, rec[col]);
+      const cellVal = toDisplay(rec[col]);
       return normalize(cellVal).includes(normalize(term));
     });
   });
-  currentPage = 1;
-  renderCurrentPage();
+  renderReportTable(currentFiltered);
   if (statsBox) {
     statsBox.innerHTML = `<strong>${currentFiltered.length}</strong> records fetched`;
     show(statsBox);
@@ -795,34 +509,41 @@ form.addEventListener('submit', async e => {
   const end = inputToDubaiIso(document.getElementById('end').value);
 
   try {
-    baseQuery = { account, start, end };
-    const firstParams = { ...baseQuery, limit: SERVER_PAGE_SIZE };
-    // Fetch first page for each endpoint in parallel
+    const params = { account, start, end };
+    // Fetch queue (inbound/outbound) and Campaign Activity in parallel
     const [inRes, outRes, campRes] = await Promise.all([
-      axios.get('/api/reports/queueCalls', { params: firstParams }),
-      axios.get('/api/reports/queueOutboundCalls', { params: firstParams }),
-      axios.get('/api/reports/campaignsActivity', { params: firstParams })
+      axios.get('/api/reports/queueCalls', { params }),
+      axios.get('/api/reports/queueOutboundCalls', { params }),
+      axios.get('/api/reports/campaignsActivity', { params })
     ]);
 
-    nextTokens.in = inRes.data.next ?? null;
-    nextTokens.out = outRes.data.next ?? null;
-    nextTokens.camp = campRes.data.next ?? null;
+    const inboundRows = (inRes.data.data || []).map(r => normalizeRow(r, 'in'));
+    const outboundRows = (outRes.data.data || []).map(r => normalizeRow(r, 'out'));
+    const campaignRows = (campRes.data.data || []).map(r => normalizeRow(r, 'camp'));
 
-    // Buffer the rows but do **not** reveal yet
-    buffers.in  = (inRes.data.data  || []).map(r => normalizeRow(r, 'in'));
-    buffers.out = (outRes.data.data || []).map(r => normalizeRow(r, 'out'));
-    buffers.camp= (campRes.data.data || []).map(r => normalizeRow(r, 'camp'));
+    // Helper to derive comparable timestamp for sorting
+    const toEpoch = rec => {
+      const v = rec['Called Time'];
+      if (v) return typeof v === 'number' ? v : Date.parse(v);
+      return 0;
+    };
 
-    lastRecords = [];
-    revealNextBatch();
+    // Merge all rows and sort descending by timestamp
+    const allRows = [...inboundRows, ...outboundRows, ...campaignRows].sort((a, b) => toEpoch(b) - toEpoch(a));
 
-    // Initialize filtered list and UI after first batch
-    currentFiltered = [...lastRecords];
+    lastRecords = allRows;
+    // Make sure filters exist then apply current values
     buildFilters(); // safe no-op if already built
-    currentPage = 1;
-    renderCurrentPage();
+    applyFilters();
 
     csvBtn.disabled = false;
+    // If no filters were supplied (all filter inputs empty), show inbound/outbound/campaign totals.
+    const anyFilter = Array.from(document.querySelectorAll('#filtersGrid [data-col]'))
+      .some(el => el.value.trim() !== '');
+    if (!anyFilter) {
+      statsBox.innerHTML = `Inbound: <strong>${inboundRows.length}</strong> &nbsp;|&nbsp; Outbound: <strong>${outboundRows.length}</strong> &nbsp;|&nbsp; Campaign: <strong>${campaignRows.length}</strong> &nbsp;|&nbsp; Total: <strong>${allRows.length}</strong>`;
+      show(statsBox);
+    }
   } catch (err) {
     // Extract meaningful message from server or axios error.
     const respErr = err.response?.data?.error;

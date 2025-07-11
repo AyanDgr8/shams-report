@@ -23,13 +23,20 @@
     #resultTable th, #resultTable td {
       font-size: 0.8rem;
       border: 1px solid #ddd;
-      padding: 0.15rem 0.25rem;
+      padding: 0.25rem 0.5rem;
     }
     .is-hidden { display: none; }
+    /* Compact styling for status/error/loading messages */
+    #loading,
+    #errorBox,
+    #stats {
+      padding: 0.25rem 0.5rem !important;
+      font-size: 0.75rem !important;
+    }
     /* Center the Reports title horizontally */
     .headingg {
       position:absolute;
-      top:15px;
+      top:25px;
       left:50%;
       transform:translateX(-50%);
       text-align:center;
@@ -118,6 +125,25 @@
       font-size:0.8rem;
       margin-bottom:0.1rem;
     }
+
+    /* --- Pagination bar below table --- */
+    #pageNav {
+      margin-top: 0.5rem;
+      background: #ffffff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 1rem;
+      box-shadow: 0 -1px 4px rgba(0,0,0,0.05);
+    }
+    #pageNav span {
+      flex: 1;
+      text-align: center;
+    }
+    #pageNav .pagination-previous,
+    #pageNav .pagination-next {
+      margin: 0;
+    }
   </style>
 </head>
 <body>
@@ -137,11 +163,11 @@
 
       <div class="columns is-variable is-2 mb-3">
         <div class="column">
-          <label class="label">Start datetime (UTC)</label>
+          <label class="label">Start datetime</label>
           <input id="start" class="input" type="datetime-local" required />
         </div>
         <div class="column">
-          <label class="label">End datetime (UTC)</label>
+          <label class="label">End datetime</label>
           <input id="end" class="input" type="datetime-local" required />
         </div>
       </div>
@@ -166,6 +192,12 @@
 
     <div class="table-container">
       <table id="resultTable" class="table is-fullwidth"></table>
+    </div>
+
+    <div id="pageNav">
+      <span></span>
+      <span></span>
+      <span></span>
     </div>
 
     <div class="has-text-centered mt-3">

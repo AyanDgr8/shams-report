@@ -17,6 +17,7 @@ import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import { getPortalToken, httpsAgent } from './tokenService.js';
+import ms from 'ms';
 
 const MAX_RETRIES = 3;
 
@@ -31,6 +32,16 @@ const ENDPOINTS = {
   // Campaign dialer lead activity
   campaignsActivity: '/api/v2/reports/campaigns/leads/history'
 };
+
+// Simple in-memory cache (per Node process). In production replace with Redis.
+const CACHE_TTL = ms('5m');          // 5 minutes
+const reportCache = new Map();       // Map<cacheKey,{expires:number,data:object[]}>
+
+// Generate a unique key from report + tenant + window params.
+function makeCacheKey(report, tenant, params) {
+  const { startDate = '', endDate = '' } = params || {};
+  return `${report}|${tenant}|${startDate}|${endDate}`;
+}
 
 /**
  * Convert an array of plain objects to a CSV string.
@@ -64,10 +75,21 @@ function toCsv(records, delimiter = ',') {
 export async function fetchReport(report, tenant, params = {}) {
   if (!ENDPOINTS[report]) throw new Error(`Unknown report type: ${report}`);
 
+  // ---------------- Cache lookup ----------------
+  const cacheKey = makeCacheKey(report, tenant, params);
+  const cached = reportCache.get(cacheKey);
+  if (cached && Date.now() < cached.expires) {
+    // Return a shallow copy so callers can mutate safely
+    return Array.isArray(cached.data) ? [...cached.data] : cached.data;
+  }
+  // ------------------------------------------------
+
   const url = `${process.env.BASE_URL}${ENDPOINTS[report]}`;
   let token;
   const out = [];
   let startKey;
+  let nextStartKey = null;
+  const maxRows = params.maxRows;
 
   retry: for (let attempt = 0, delay = 1_000; attempt < MAX_RETRIES; attempt++, delay *= 2) {
     try {
@@ -109,8 +131,7 @@ export async function fetchReport(report, tenant, params = {}) {
               'to',
               'interaction_id',
               'agent_disposition',
-              'agent_subdisposition1',
-              'agent_subdisposition2'
+              'agent_subdisposition'
             ].join(',')
           }),
           // Same for inbound queue calls (queues_cdrs) so we get talked_duration & abandoned columns
@@ -147,8 +168,7 @@ export async function fetchReport(report, tenant, params = {}) {
               'a_leg',
               'interaction_id',
               'agent_disposition',
-              'agent_subdisposition1',
-              'agent_subdisposition2'
+              'agent_subdisposition'
             ].join(',')
           }),
           // Request all relevant columns for campaign activity
@@ -178,6 +198,7 @@ export async function fetchReport(report, tenant, params = {}) {
               'disposition',
               'hangup_cause',
               'lead_disposition',
+              'agent_subdisposition',
               'answered_time'
             ].join(',')
           }),
@@ -187,7 +208,7 @@ export async function fetchReport(report, tenant, params = {}) {
         // Acquire/refresh token for every loop iteration (cheap due to cache)
         token = await getPortalToken(tenant);
 
-        const { data } = await axios.get(url, {
+        const resp = await axios.get(url, {
           params: qs,
           headers: {
             Authorization: `Bearer ${token}`,
@@ -197,25 +218,45 @@ export async function fetchReport(report, tenant, params = {}) {
           httpsAgent
         });
 
-        let chunk;
-        if (Array.isArray(data.data)) {
-          chunk = data.data;
-        } else if (Array.isArray(data)) {
+        const payload = resp.data;
+
+        // Always capture paging token; undefined → null to signal end of list
+        nextStartKey = payload.next_start_key ?? null;
+
+        let records;
+        if (Array.isArray(payload?.data)) {
+          records = payload.data;
+        } else if (Array.isArray(payload)) {
           // Some endpoints return an array at top-level
-          chunk = data;
-        } else if (data.rows && Array.isArray(data.rows)) {
-          chunk = data.rows;
+          records = payload;
+        } else if (payload.rows && Array.isArray(payload.rows)) {
+          records = payload.rows;
         } else {
           // fallback – attempt to flatten object of objects (similar to agentStatus)
-          chunk = Object.entries(data).map(([k, v]) => ({ key: k, ...v }));
+          records = Object.entries(payload).map(([k, v]) => ({ key: k, ...v }));
         }
-        out.push(...chunk);
 
-        if (data.next_start_key) {
-          startKey = data.next_start_key;
-        } else {
-          break; // no more pages
+        const remaining = maxRows ? (maxRows - out.length) : records.length;
+
+        // Push at most `remaining` records so we never exceed requested limit
+        if (remaining > 0) {
+          out.push(...records.slice(0, remaining));
         }
+
+        // NEW: break early once we have *some* rows so caller can respond
+        // quickly. We keep nextStartKey so the very next request can resume
+        // where we left off.
+        if (out.length > 0) {
+          break;
+        }
+
+        // If we still didn't accumulate anything and there is another page,
+        // continue looping; otherwise exit.
+        if (nextStartKey === null) {
+          break;
+        }
+
+        startKey = nextStartKey;
       }
       break retry; // success
     } catch (err) {
@@ -271,7 +312,9 @@ export async function fetchReport(report, tenant, params = {}) {
       }
     });
 
-    return firstRows;
+    // Cache result BEFORE returning
+    reportCache.set(cacheKey, { expires: Date.now() + CACHE_TTL, data: firstRows });
+    return { rows: firstRows, next: nextStartKey };
   }
 
   // For outbound queue reports the API returns one row but embeds full
@@ -283,10 +326,14 @@ export async function fetchReport(report, tenant, params = {}) {
         rec.queue_history = [rec.queue_history[0]];
       }
     });
-    return out;
+    // Cache result BEFORE returning
+    reportCache.set(cacheKey, { expires: Date.now() + CACHE_TTL, data: out });
+    return { rows: out, next: nextStartKey };
   }
 
-  return out;
+  // Cache result BEFORE returning
+  reportCache.set(cacheKey, { expires: Date.now() + CACHE_TTL, data: out });
+  return { rows: out, next: nextStartKey };
 }
 
 // Convenience wrappers
@@ -318,18 +365,18 @@ async function cli() {
   }
 
   const data = await fetchReport(report, tenant, params);
-  console.log(`Fetched ${data.length} rows for ${report}`);
+  console.log(`Fetched ${data.rows.length} rows for ${report}`);
 
   if (outFile) {
     await fs.promises.mkdir(path.dirname(outFile), { recursive: true });
     if (outFile.endsWith('.csv')) {
-      await fs.promises.writeFile(outFile, toCsv(data));
+      await fs.promises.writeFile(outFile, toCsv(data.rows));
     } else {
-      await fs.promises.writeFile(outFile, JSON.stringify(data, null, 2));
+      await fs.promises.writeFile(outFile, JSON.stringify(data.rows, null, 2));
     }
     console.log(`Saved to ${outFile}`);
   } else {
-    console.table(data);
+    console.table(data.rows);
   }
 }
 
