@@ -304,12 +304,27 @@ export async function fetchReport(report, tenant, params = {}) {
       }
     }
 
-    // Each first row may still contain a multi-entry agent_history array; keep only
-    // its first element if so.
+    // Derive `abandoned` flag when Talkdesk omits it
+    // Business rule: if agent_history missing/empty, OR
+    //                answered_time is falsy (not set), OR
+    //                all agent_history entries lack answered_time
     firstRows.forEach(r => {
-      if (Array.isArray(r.agent_history) && r.agent_history.length > 1) {
-        r.agent_history = [r.agent_history[0]];
+      const hist = r.agent_history;
+      const histMissing =
+        hist == null ||
+        (Array.isArray(hist) && hist.length === 0) ||
+        // Handle cases where API returns array with empty objects [{}]
+        (Array.isArray(hist) && hist.every(h => h && Object.keys(h).length === 0));
+
+      let histNoAnswer = false;
+      if (Array.isArray(hist) && hist.length > 0) {
+        histNoAnswer = hist.every(h => !h?.answered_time && !h?.agent_action?.includes("transfer"));
       }
+
+      const isAbandoned = histMissing || !r.answered_time || histNoAnswer;
+
+      // Always override to ensure consistency
+      r.abandoned = isAbandoned ? "YES" : "NO";
     });
 
     // Cache result BEFORE returning

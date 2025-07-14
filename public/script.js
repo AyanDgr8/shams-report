@@ -227,9 +227,9 @@ function leadHistoryToHtml(history) {
       const ms = h.last_attempt > 10_000_000_000 ? h.last_attempt : h.last_attempt * 1000;
       last = isoToLocal(new Date(ms).toISOString());
     }
-    const fn = h.first_name || h.agent?.first_name || '';
-    const ln = h.last_name || h.agent?.last_name || '';
-    const ext = h.ext || h.agent?.ext || '';
+    const fn = h.agent?.first_name ?? '';
+    const ln = h.agent?.last_name ?? '';
+    const ext = h.agent?.ext ?? '';
     const evt = h.type || h.event || '';
     const cause = h.hangup_cause || '';
     return `<tr><td>${last}</td><td>${fn}</td><td>${ln}</td><td>${ext}</td><td>${evt}</td><td>${cause}</td></tr>`;
@@ -245,7 +245,7 @@ function computeAbandoned(row) {
   if (typeof history === 'string') {
     try { history = JSON.parse(history); } catch { history = []; }
   }
-  if (!Array.isArray(history) || !history.length) return 'NO';
+  if (!Array.isArray(history) || !history.length) return 'YES';
 
   let connected = false;
   let star7 = false;
