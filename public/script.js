@@ -162,6 +162,13 @@ if (!window.__eyeDelegationAttached) {
 function historyToHtml(history) {
   if (!Array.isArray(history) || !history.length) return '';
 
+  // Ensure ascending order by last_attempt (oldest first)
+  const sorted = [...history].sort((a, b) => {
+    const aTs = a.last_attempt ?? 0;
+    const bTs = b.last_attempt ?? 0;
+    return aTs - bTs;
+  });
+
   // Define the desired column order & headers
   const COLS = [
     { key: 'last_attempt', label: 'Last Attempt' },
@@ -175,7 +182,7 @@ function historyToHtml(history) {
 
   const thead = `<thead><tr>${COLS.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>`;
 
-  const rows = history.map(h => {
+  const rows = sorted.map(h => {
     const cells = COLS.map(c => {
       let val = '';
       if (c.key === 'name') {
@@ -219,8 +226,16 @@ function queueHistoryToHtml(history) {
 // Convert Lead history array into an HTML table (Last Attempt, First Name, Last Name, Extension/Number, Event, Hangup Cause)
 function leadHistoryToHtml(history) {
   if (!Array.isArray(history) || !history.length) return '';
+
+  // Sort ascending by last_attempt so oldest attempts appear first
+  const sorted = [...history].sort((a, b) => {
+    const aTs = a.last_attempt ?? 0;
+    const bTs = b.last_attempt ?? 0;
+    return aTs - bTs;
+  });
+
   const thead = '<thead><tr><th>Last Attempt</th><th>First Name</th><th>Last Name</th><th>Extension/Number</th><th>Event</th><th>Hangup Cause</th></tr></thead>';
-  const rows = history.map(h => {
+  const rows = sorted.map(h => {
     // last attempt timestamp
     let last = '';
     if (h.last_attempt) {
