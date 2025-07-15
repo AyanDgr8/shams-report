@@ -834,6 +834,8 @@ form.addEventListener('submit', async e => {
     // Initialize filtered list and UI after first batch
     currentFiltered = [...lastRecords];
     buildFilters(); // safe no-op if already built
+    // Automatically apply any filter values entered before fetching
+    applyFilters();
     currentPage = 1;
     renderCurrentPage();
 
@@ -887,6 +889,31 @@ csvBtn.addEventListener('click', () => {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+});
+
+// --- Auth helpers ---
+async function checkAuth() {
+  try {
+    const res = await axios.get('/api/auth/check');
+    if (res.data.authenticated) {
+      show(document.getElementById('logoutBtn'));
+    } else {
+      window.location.href = '/login.html';
+    }
+  } catch {
+    window.location.href = '/login.html';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('logoutBtn');
+  if (btn) {
+    btn.addEventListener('click', async () => {
+      await axios.post('/api/logout');
+      window.location.href = '/login.html';
+    });
+  }
+  checkAuth();
 });
 
 // Build filters immediately on page load so they are visible by default

@@ -9,10 +9,16 @@ import { fetchReport } from './reportFetcher.js';
 import { getPortalToken, httpsAgent } from './tokenService.js';
 import axios from 'axios';
 import { parseBuffer } from 'music-metadata';
+import cookieParser from 'cookie-parser';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
+import mysql from 'mysql2/promise';
 
 dotenv.config();
 
 const app = express();
+app.use(express.json()); // parse JSON bodies
+app.use(cookieParser()); // parse cookies
 const PORT = process.env.PORT || 9595;
 const HOST = process.env.HOST || '0.0.0.0'; // 0.0.0.0 ensures the server binds to all network interfaces
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
@@ -22,6 +28,62 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// --- Authentication setup ---
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_key';
+
+const pool = mysql.createPool({
+  host: 'localhost',
+  user: 'root',
+  password: 'Ayan@1012',
+  database: 'shams',
+  port: 3306,
+  waitForConnections: true,
+  connectionLimit: 5,
+});
+
+// Login
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  try {
+    const [rows] = await pool.query(
+      'SELECT id, username, email, password FROM users WHERE username = ? OR email = ? LIMIT 1',
+      [username, username]
+    );
+    if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
+    const user = rows[0];
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+
+    await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
+
+    const token = jwt.sign({ id: user.id, username: user.username, email: user.email }, JWT_SECRET, { expiresIn: '2h' });
+    res.cookie('token', token, { httpOnly: true, sameSite: 'lax', maxAge: 2 * 60 * 60 * 1000 });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Auth check
+app.get('/api/auth/check', (req, res) => {
+  const { token } = req.cookies || {};
+  if (!token) return res.json({ authenticated: false });
+  try {
+    jwt.verify(token, JWT_SECRET);
+    res.json({ authenticated: true });
+  } catch {
+    res.json({ authenticated: false });
+  }
+});
+
+// Logout
+app.post('/api/logout', (req, res) => {
+  res.clearCookie('token');
+  res.json({ success: true });
+});
 
 // GET /api/reports/:type?account=<tenant>&start=<ISO>&end=<ISO>
 app.get('/api/reports/:type', async (req, res) => {

@@ -18,7 +18,7 @@
     .box, .p-4 { padding: 0.5rem !important; }
     .column { padding: 0.75rem !important; }
     #filtersBox { padding: 0.75rem !important; }
-    .header-row { display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+    .header-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
     #resultTable {
       border-collapse: collapse;
     }
@@ -146,12 +146,25 @@
     #pageNav .pagination-next {
       margin: 0;
     }
+    /* Logout button color */
+    #logoutBtn {
+      background-color: #EF6F53 !important;
+      border-color: #EF6F53 !important;
+      color: #fff !important;
+      margin-left: auto;
+    }
+    #logoutBtn:hover {
+      background-color: #d95b41 !important; /* darker shade */
+      border-color: #d95b41 !important;
+      color: #fff !important;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="mt-4 header-row">
       <img src="/uploads/logo.webp" alt="Logo" width="250" />
+      <button id="logoutBtn" class="button is-small is-light is-hidden">Logout</button>
     </div>
 
     <!-- <h1 class="title has-text-centered headingg">Reports</h1> -->

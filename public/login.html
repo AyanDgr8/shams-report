@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login – Shams Reports</title>
+  <link rel="icon" type="image/png" href="/uploads/MultyLogo.png" />
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"
+  />
+  <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+  <style>
+    body {
+      background: #364c63;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    #loginBox {
+      width: 100%;
+      max-width: 380px;
+      padding: 2rem 1.5rem;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+      color: #fff;
+    }
+    .headingg {
+      text-align: center;
+      text-transform: uppercase;
+      color: #EF6F53;
+      margin-bottom: 1.5rem;
+      font-weight: 800;
+    }
+    .is-hidden { display: none; }
+    .label{ color: #fff; }
+  </style>
+</head>
+<body>
+
+    <div id="loginBox">
+        <h2 class="headingg">Multycomm Reports</h2>
+        <div id="errorBox" class="notification is-danger is-light is-hidden"></div>
+        <form id="loginForm">
+        <div class="field">
+            <label class="label" for="username">Username</label>
+            <div class="control">
+            <input id="username" class="input" type="text" required />
+            </div>
+        </div>
+        <div class="field">
+            <label class="label" for="password">Password</label>
+            <div class="control">
+            <input id="password" class="input" type="password" required />
+            </div>
+        </div>
+        <div class="field has-text-centered">
+            <button id="loginBtn" class="button is-primary" type="submit">Login</button>
+        </div>
+        </form>
+    </div>
+
+  <script>
+    const form = document.getElementById('loginForm');
+    const errorBox = document.getElementById('errorBox');
+    const loginBtn = document.getElementById('loginBtn');
+
+    function show(el){ el.classList.remove('is-hidden'); }
+    function hide(el){ el.classList.add('is-hidden'); }
+
+    // If already logged in, skip login page
+    async function redirectIfAuth(){
+      try {
+        const res = await axios.get('/api/auth/check');
+        if(res.data.authenticated){
+          window.location.href = '/index.html';
+        }
+      } catch { /* ignore, stay on login */ }
+    }
+
+    redirectIfAuth();
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hide(errorBox);
+      loginBtn.classList.add('is-loading');
+
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+
+      try {
+        const res = await axios.post('/api/login', { username, password });
+        if(res.data.success){
+          window.location.href = '/index.html';
+        } else {
+          throw new Error(res.data.error || 'Invalid credentials');
+        }
+      } catch(err){
+        errorBox.textContent = err.response?.data?.error || err.message || 'Login failed';
+        show(errorBox);
+      } finally {
+        loginBtn.classList.remove('is-loading');
+      }
+    });
+  </script>
+</body>
+</html>
