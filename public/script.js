@@ -29,13 +29,13 @@ const RAW_COLUMNS = new Set([
 
 // Columns that should have filter inputs (or dropdown)
 const FILTER_COLUMNS = new Set([
-  'Callee ID number',
+  'Callee ID / Lead number',
   'Called Time',
   'Queue / Campaign Name',
   'Call ID',
-  'Caller Id Number',
+  'Caller ID Number',
   'Agent Disposition',
-  'Caller Id / Lead Name',
+  'Caller ID / Lead Name',
   'Disposition',
   // there is no standalone "Agent Extension" header; the above covers it
   'Agent name',
@@ -84,8 +84,8 @@ const HEADERS = [
   'Call ID',
   'Queue / Campaign Name',
   'Called Time',
-  'Caller Id Number',
-  'Caller Id / Lead Name',
+  'Caller ID Number',
+  'Caller ID / Lead Name',
   'Answered time',
   'Hangup time',
   'Wait Duration',
@@ -93,7 +93,7 @@ const HEADERS = [
   'Agent Disposition',
   'Sub_disp_1',
   'Sub_disp_2',
-  'Callee ID number',
+  'Callee ID / Lead number',
   'Status',
   'Campaign Type',
   'Abandoned',
@@ -104,7 +104,7 @@ const HEADERS = [
 
 // Additional headers for Campaign Activity report
 const CAMPAIGN_HEADERS = [
-  'Callee ID number',
+  'Callee ID / Lead number',
   'Agent name',
   'Recording',
   'Status',
@@ -295,12 +295,12 @@ function normalizeRow(row, source) {
       // 'Lead name': row.lead_name ?? '',
       // 'Lead first name': row.lead_first_name ?? '',
       // 'Lead last name': row.lead_last_name ?? '',
-      'Caller Id / Lead Name': row.lead_name ?? '',
-      'Callee ID number': row.lead_number ?? '',
+      'Caller ID / Lead Name': row.lead_name ?? '',
+      'Callee ID / Lead number': row.lead_number ?? '',
       // 'Lead ticket id': row.lead_ticket_id ?? '',
       // 'Lead type': row.lead_type ?? '',
       'Agent name': row.agent_name ?? '',
-      'Caller Id Number': row.agent_extension ?? '',
+      'Caller ID Number': row.agent_extension ?? '',
       'Talk Duration': row.agent_talk_time ?? '',
       'Agent Disposition': row.agent_disposition ?? '',
       'Sub_disp_1': sub1,
@@ -318,6 +318,38 @@ function normalizeRow(row, source) {
       // 'Hangup cause': row.hangup_cause ?? '',
       'Lead disposition': row.lead_disposition ?? '',
       'Abandoned': '',
+    };
+  }
+
+  if (source === 'cdr') {
+    // Use timestamp (seconds or ms) or ISO datetime as Called Time
+    let ts = row.timestamp ?? row.datetime ?? '';
+    if (typeof ts === 'number') {
+      const ms = ts < 1_000_000_000_000 ? ts * 1000 : ts; // sec → ms if needed
+      ts = new Date(ms).toISOString();
+    }
+    return {
+      'Type': 'CDR',
+      'Call ID': row.call_id ?? '',
+      'Queue / Campaign Name': '',
+      'Called Time': ts,
+      'Caller ID Number': row.caller_id_number ?? '',
+      'Caller ID / Lead Name': row.caller_id_name ?? '',
+      'Answered time': row.answered_time ?? '',
+      'Hangup time': '',
+      'Wait Duration': '',
+      'Talk Duration': row.duration_seconds ?? '',
+      'Agent Disposition': '',
+      'Sub_disp_1': '',
+      'Sub_disp_2': '',
+      'Callee ID / Lead number': row.callee_id_number ?? row.to ?? '',
+      'Status': '',
+      'Campaign Type': '',
+      'Abandoned': '',
+      'Agent History': '',
+      'Queue History': '',
+      'Agent name': '',
+      'Recording': row.media_recording_id ?? row.recording_filename ?? ''
     };
   }
 
@@ -351,13 +383,13 @@ function normalizeRow(row, source) {
     'Call ID': row.call_id ?? row.callid ?? '',
     'Queue / Campaign Name': row.queue_name ?? '',
     'Called Time': row.called_time ?? '',
-    'Caller Id Number': row.caller_id_number ?? '',
-    'Caller Id / Lead Name': row.caller_id_name ?? '',
+    'Caller ID Number': row.caller_id_number ?? '',
+    'Caller ID / Lead Name': row.caller_id_name ?? '',
     'Answered time': row.answered_time ?? '',
     'Hangup time': row.hangup_time ?? '',
     'Wait Duration': row.wait_duration ?? '',
     'Talk Duration': row.talked_duration ?? '',
-    'Callee ID number': isOutbound ? (row.to ?? '') : (row.callee_id_number ?? ''),
+    'Callee ID / Lead number': isOutbound ? (row.to ?? '') : (row.callee_id_number ?? ''),
     'Agent Disposition': row.agent_disposition ?? '',
     'Sub_disp_1': sub1,
     'Sub_disp_2': sub2,
@@ -382,6 +414,11 @@ function renderRowsHtml(rows, startSerial = 1) {
         if (h === 'S.No.') return `<td>${serial}</td>`;
         let v = rec[h];
         if (v == null) v = '';
+
+        // Ensure Talk Duration shows as HH:MM:SS even when stored as string seconds
+        if (h === 'Talk Duration' && /^\d+$/.test(String(v))) {
+          v = secondsToHMS(Number(v));
+        }
 
         // Render recording inline with audio controls (button removed)
         if (h === 'Recording') {
@@ -419,7 +456,7 @@ function renderRowsHtml(rows, startSerial = 1) {
         return `<td>${v}</td>`;
       });
       const type = rec['Type'];
-      const rowClass = type === 'Inbound' ? 'row-inbound' : type === 'Outbound' ? 'row-outbound' : 'row-campaign';
+      const rowClass = type === 'Inbound' ? 'row-inbound' : type === 'Outbound' ? 'row-outbound' : type === 'Campaign' ? 'row-campaign' : 'row-cdr';
       serial += 1;
       return `<tr class="${rowClass}">${tds.join('')}</tr>`;
     })
@@ -492,24 +529,29 @@ const PAGE_SIZE = 500;
 let currentPage = 1;
 
 // Server-side paging helpers
-let nextTokens = { in: null, out: null, camp: null };
+let nextTokens = { in: null, out: null, camp: null, cdr: null };
 let baseQuery = {};
 
 // Buffers that hold rows fetched from the server but **not yet revealed**
-const buffers = { in: [], out: [], camp: [] };
+const buffers = { in: [], out: [], camp: [], cdr: [] };
 
 // Helper: derive epoch (ms) from a record for date comparisons
 function toEpoch(rec) {
   const v = rec['Called Time'];
   if (!v) return 0;
-  return typeof v === 'number' ? v : Date.parse(v);
+  if (typeof v === 'number') {
+    // If value looks like epoch seconds (<1e11) convert to ms
+    return v < 1e11 ? v * 1000 : v;
+  }
+  const parsed = Date.parse(v);
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-// Deduplicate records by unique Call ID + Type combination
+// Deduplicate records by unique Call ID irrespective of Type
 function dedupRecords(list) {
   const seen = new Map();
   list.forEach(rec => {
-    const key = `${rec['Call ID'] || ''}|${rec.Type || ''}`;
+    const key = rec['Call ID'] || Symbol();
     if (!seen.has(key)) {
       seen.set(key, rec);
     }
@@ -524,7 +566,7 @@ function revealNextBatch() {
     // Pick newest record across buffers
     let pickKey = null;
     let pickRec = null;
-    ['in', 'out', 'camp'].forEach(k => {
+    ['in', 'out', 'camp', 'cdr'].forEach(k => {
       if (!buffers[k].length) return;
       const candidate = buffers[k][0];
       if (!pickRec || toEpoch(candidate) > toEpoch(pickRec)) {
@@ -565,6 +607,7 @@ async function loadNextChunks() {
   fetchChunk('/api/reports/queueCalls', 'in', r => normalizeRow(r, 'in'));
   fetchChunk('/api/reports/queueOutboundCalls', 'out', r => normalizeRow(r, 'out'));
   fetchChunk('/api/reports/campaignsActivity', 'camp', r => normalizeRow(r, 'camp'));
+  fetchChunk('/api/reports/cdrs', 'cdr', r => normalizeRow(r, 'cdr'));
 
   if (promises.length) {
     await Promise.all(promises);
@@ -585,16 +628,17 @@ async function loadNextChunks() {
       const oldestMs = oldest < 1_000_000_000_000 ? oldest * 1000 : oldest;
       const newEndIso = new Date(oldestMs - 1000).toISOString();
       const timeParams = { ...baseQuery, end: newEndIso, limit: SERVER_PAGE_SIZE };
-      const [inRes, outRes, campRes] = await Promise.all([
+      const [inRes, outRes, campRes, cdrRes] = await Promise.all([
         axios.get('/api/reports/queueCalls', { params: timeParams }),
         axios.get('/api/reports/queueOutboundCalls', { params: timeParams }),
-        axios.get('/api/reports/campaignsActivity', { params: timeParams })
+        axios.get('/api/reports/campaignsActivity', { params: timeParams }),
+        axios.get('/api/reports/cdrs', { params: timeParams })
       ]);
 
-      [inRes, outRes, campRes].forEach((res, idx) => {
+      [inRes, outRes, campRes, cdrRes].forEach((res, idx) => {
         const rows = res.data?.data || [];
         if (!rows.length) return;
-        const type = idx === 0 ? 'in' : idx === 1 ? 'out' : 'camp';
+        const type = idx === 0 ? 'in' : idx === 1 ? 'out' : idx === 2 ? 'camp' : 'cdr';
         const norm = rows.map(r => normalizeRow(r, type));
         buffers[type].push(...norm);
         buffers[type].sort((a, b) => toEpoch(b) - toEpoch(a));
@@ -613,7 +657,15 @@ async function loadNextChunks() {
     renderCurrentPage();
     return;
   }
-  applyFilters();
+
+  // Preserve user pagination when filters are active.
+  const prevPage = currentPage;
+  applyFilters(); // this resets currentPage to 1 internally
+  // If the previously requested page is still within range after filtering, restore it
+  const totalPagesAfterFilter = Math.max(1, Math.ceil(currentFiltered.length / PAGE_SIZE));
+  if (prevPage <= totalPagesAfterFilter) {
+    currentPage = prevPage;
+  }
   renderCurrentPage();
 }
 
@@ -642,12 +694,18 @@ function renderCurrentPage() {
   }
 
   // Determine if more data might exist beyond currentFiltered
-  const buffersEmpty = !buffers.in.length && !buffers.out.length && !buffers.camp.length;
+  const buffersEmpty = !buffers.in.length && !buffers.out.length && !buffers.camp.length && !buffers.cdr.length;
   const noMoreTokens = Object.values(nextTokens).every(v => v === null);
-  const mayHaveMore = !(buffersEmpty && noMoreTokens && currentPage === totalPages);
+  // Enable Next as long as we still have buffered records or server pages, even if
+  // the current filtered page shows fewer rows than PAGE_SIZE.
+  const mayHaveMore = !(buffersEmpty && noMoreTokens);
 
   const prevDisabled = currentPage === 1 ? 'disabled' : '';
-  const nextDisabled = mayHaveMore ? '' : 'disabled';
+  const nextDisabled = (currentPage === totalPages && !mayHaveMore) ? 'disabled' : '';
+
+  // Remove any lingering children to avoid stale disabled links
+  while (nav.firstChild) nav.removeChild(nav.firstChild);
+
   nav.innerHTML = `
     <a class="pagination-previous" ${prevDisabled}>Previous</a>
     <a class="pagination-next" ${nextDisabled}>Next</a>
@@ -660,20 +718,17 @@ document.addEventListener('click', async e => {
     currentPage--;
     renderCurrentPage();
   } else if (e.target.matches('.pagination-next') && !e.target.hasAttribute('disabled')) {
-    // Visual feedback: show ellipsis and disable while loading
-    const nextBtn = e.target;
-    nextBtn.textContent = '…';
-    nextBtn.setAttribute('disabled', '');
+    // Visual feedback: replace content with spinner icon (no disabling).
+    e.target.innerHTML = '<span class="icon is-small"><i class="fas fa-spinner fa-spin"></i></span>';
 
+    const pagesBefore = Math.max(1, Math.ceil(currentFiltered.length / PAGE_SIZE));
+    const wasOnLastPage = currentPage === pagesBefore;
     currentPage++;
-    const needRows = currentPage * PAGE_SIZE > lastRecords.length;
-    if (needRows) {
-      // Ensure we have at least one page worth of data buffered; if loadNextChunks
-      // returns nothing (no more rows) we will still re-render and buttons will disable.
+    if (wasOnLastPage) {
       await loadNextChunks();
     }
 
-    // Re-render navigation + table (this will recreate Next/Prev buttons)
+    // Re-render navigation + table (this will recreate navigation)
     renderCurrentPage();
   }
 });
@@ -690,7 +745,7 @@ function buildFilters() {
     // 6 per row on desktop (2/12 each), 3 per row on tablet, 2 per row on mobile
     wrapper.className = 'column is-2-desktop is-one-third-tablet is-half-mobile';
     if (col === 'Type') {
-      wrapper.innerHTML = `<div class="field"><label class="label is-small">${col}</label><div class="select is-small is-fullwidth"><select data-col="${col}" id="filter_${colId}"><option value="">All</option><option>Inbound</option><option>Outbound</option><option>Campaign</option></select></div></div>`;
+      wrapper.innerHTML = `<div class="field"><label class="label is-small">${col}</label><div class="select is-small is-fullwidth"><select data-col="${col}" id="filter_${colId}"><option value="">All</option><option>Inbound</option><option>Outbound</option><option>Campaign</option><option>CDR</option></select></div></div>`;
     } else if (col === 'Status') {
       wrapper.innerHTML = `<div class="field"><label class="label is-small">${col}</label><div class="select is-small is-fullwidth"><select data-col="${col}" id="filter_${colId}"><option value="">All</option><option>Success</option><option>Failed</option><option>Cooloff</option></select></div></div>`;
     } else if (col === 'Campaign Type') {
@@ -705,26 +760,35 @@ function buildFilters() {
   // Attach listeners
   grid.querySelectorAll('[data-col]').forEach(el => {
     const ev = el.tagName === 'SELECT' ? 'change' : 'input';
-    el.addEventListener(ev, applyFilters);
+    el.addEventListener(ev, () => {
+      // toggle background when non-empty
+      if (el.value.trim()) {
+        el.classList.add('filter-active');
+      } else {
+        el.classList.remove('filter-active');
+      }
+      applyFilters();
+    });
   });
 
   // Filters are already visible by default now
 }
 
 function computeTotals(list) {
-  let inCt = 0, outCt = 0, campCt = 0;
+  let inCt = 0, outCt = 0, campCt = 0, cdrCt = 0;
   for (const r of list) {
     if (r.Type === 'Inbound') inCt++;
     else if (r.Type === 'Outbound') outCt++;
-    else campCt++; // Campaign
+    else if (r.Type === 'Campaign') campCt++;
+    else cdrCt++; // CDR
   }
-  return { inCt, outCt, campCt, total: list.length };
+  return { inCt, outCt, campCt, cdrCt, total: list.length };
 }
 
 function showTotals(list) {
   if (!statsBox) return;
-  const { inCt, outCt, campCt, total } = computeTotals(list);
-  statsBox.innerHTML = `Inbound: <strong>${inCt}</strong> &nbsp;|&nbsp; Outbound: <strong>${outCt}</strong> &nbsp;|&nbsp; Campaign: <strong>${campCt}</strong> &nbsp;|&nbsp; Total: <strong>${total}</strong>`;
+  const { inCt, outCt, campCt, cdrCt, total } = computeTotals(list);
+  statsBox.innerHTML = `Inbound: <strong>${inCt}</strong> &nbsp;|&nbsp; Outbound: <strong>${outCt}</strong> &nbsp;|&nbsp; Campaign: <strong>${campCt}</strong> &nbsp;|&nbsp; CDR: <strong>${cdrCt}</strong> &nbsp;|&nbsp; Total: <strong>${total}</strong>`;
   show(statsBox);
 }
 
@@ -813,20 +877,23 @@ form.addEventListener('submit', async e => {
     baseQuery = { account, start, end };
     const firstParams = { ...baseQuery, limit: SERVER_PAGE_SIZE };
     // Fetch first page for each endpoint in parallel
-    const [inRes, outRes, campRes] = await Promise.all([
+    const [inRes, outRes, campRes, cdrRes] = await Promise.all([
       axios.get('/api/reports/queueCalls', { params: firstParams }),
       axios.get('/api/reports/queueOutboundCalls', { params: firstParams }),
-      axios.get('/api/reports/campaignsActivity', { params: firstParams })
+      axios.get('/api/reports/campaignsActivity', { params: firstParams }),
+      axios.get('/api/reports/cdrs', { params: firstParams })
     ]);
 
     nextTokens.in = inRes.data.next ?? null;
     nextTokens.out = outRes.data.next ?? null;
     nextTokens.camp = campRes.data.next ?? null;
+    nextTokens.cdr = cdrRes.data.next ?? null;
 
     // Buffer the rows but do **not** reveal yet
-    buffers.in  = (inRes.data.data  || []).map(r => normalizeRow(r, 'in'));
-    buffers.out = (outRes.data.data || []).map(r => normalizeRow(r, 'out'));
-    buffers.camp= (campRes.data.data || []).map(r => normalizeRow(r, 'camp'));
+    buffers.in   = (inRes.data.data   || []).map(r => normalizeRow(r, 'in'));
+    buffers.out  = (outRes.data.data  || []).map(r => normalizeRow(r, 'out'));
+    buffers.camp = (campRes.data.data || []).map(r => normalizeRow(r, 'camp'));
+    buffers.cdr  = (cdrRes.data.data  || []).map(r => normalizeRow(r, 'cdr'));
 
     lastRecords = [];
     revealNextBatch();

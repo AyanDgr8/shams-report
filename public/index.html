@@ -50,10 +50,17 @@
     /* Custom fetch button color */
     .btn-fetch {
       background-color: #1976d2 !important;
-      border-color: #1976d2 !important;
+      border-color: #EF6F53 !important;
       color: #fff;
       padding: 0.1rem !important;
       font-size: 0.8rem !important;
+    }
+
+    /* Hover effect for Fetch Report button (when enabled) */
+    .btn-fetch:hover:not([disabled]) {
+      background-color: #EF6F53 !important; /* slightly darker blue */
+      border-color: #1976d2 !important;
+      color: #fff !important;
     }
 
     /* Hover effect for Download CSV button */
@@ -157,6 +164,20 @@
       background-color: #d95b41 !important; /* darker shade */
       border-color: #d95b41 !important;
       color: #fff !important;
+    }
+    /* --- Sticky table header --- */
+    #resultTable thead th {
+      position: sticky;
+      top: 0;
+      z-index: 3; /* above body rows */
+      background: #c3c3c3; /* ensure it covers row colours */
+    }
+
+    /* Active search filter with value */
+    .filter-active {
+      background-color: #1976d2 !important; /* blue background */
+      border-color: #EF6F53 !important;     /* orange border */
+      color: #fff !important;               /* white text */
     }
   </style>
 </head>

@@ -202,6 +202,29 @@ export async function fetchReport(report, tenant, params = {}) {
               'answered_time'
             ].join(',')
           }),
+          // Same for CDRS calls (cdrs) so we get talked_duration & abandoned columns
+          ...(report === 'cdrs' && {
+            fields: [
+              'call_id',
+              'datetime',
+              'timestamp',
+              'caller_id_name',
+              'caller_id_number',
+              'callee_id_name',
+              'callee_id_number',
+              'to',
+              'from',
+              'duration_seconds',
+              'billing_seconds',
+              'ringing_seconds',
+              'hangup_cause',
+              'media_recording_id',
+              'recording_filename',
+              'a_leg',
+              'interaction_id',
+              'answered_time',
+            ].join(',')
+          }),
           ...(startKey && { start_key: startKey })
         };
 
