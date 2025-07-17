@@ -14,10 +14,10 @@
   <style>
     body { background: #fff; }
     /* Reduce global paddings */
-    .container { padding: 0.5rem; }
+    .container { padding: 0.25rem; }
     .box, .p-4 { padding: 0.5rem !important; }
-    .column { padding: 0.75rem !important; }
-    #filtersBox { padding: 0.75rem !important; }
+    .column { padding: 0.5rem !important; }
+    #filtersBox { padding: 0.5rem !important; }
     .header-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
     #resultTable {
       border-collapse: collapse;
@@ -54,6 +54,7 @@
       color: #fff;
       padding: 0.1rem !important;
       font-size: 0.8rem !important;
+      margin-top:-0.5rem;
     }
 
     /* Hover effect for Fetch Report button (when enabled) */
@@ -64,10 +65,19 @@
     }
 
     /* Hover effect for Download CSV button */
+    #csvBtn {
+      background-color: #EF6F53 !important;
+      border-color: #1976d2 !important;
+      color: #fff;
+      padding: 0.1rem !important;
+      font-size: 0.8rem !important;
+      margin-top:-0.5rem;
+    }
+
     #csvBtn:hover {
       background-color: #1976d2 !important;
       color: #fff !important;
-      border-color: #1976d2 !important;
+      border-color: #EF6F53 !important;
       font-size: 0.8rem !important;
     }
     
@@ -117,7 +127,7 @@
       overflow-y:auto;   /* scroll if it grows taller */
     }
     .table-container{
-      max-height:40vh;   /* 50 % of screen height */
+      max-height:37.5vh;   /* 50 % of screen height */
       overflow-y:auto;   /* scroll the table body */
     }
 
@@ -151,7 +161,9 @@
     }
     #pageNav .pagination-previous,
     #pageNav .pagination-next {
-      margin: 0;
+      margin-left: 0.5rem;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.8rem;
     }
     /* Logout button color */
     #logoutBtn {
@@ -183,21 +195,21 @@
 </head>
 <body>
   <div class="container">
-    <div class="mt-4 header-row">
+    <div class="header-row">
       <img src="/uploads/logo.webp" alt="Logo" width="250" />
       <button id="logoutBtn" class="button is-small is-light is-hidden">Logout</button>
     </div>
 
     <!-- <h1 class="title has-text-centered headingg">Reports</h1> -->
     <form id="filterForm" class="box p-4">
-      <div class="field is-horizontal account-row mb-3">
+      <div class="field is-horizontal account-row">
         <div class="field-label is-normal"><label class="label is-small">Account</label></div>
         <div class="field-body">
           <input id="account" class="input is-small" type="text" value="shams" disabled required style="max-width: 120px;" />
         </div>
       </div>
 
-      <div class="columns is-variable is-2 mb-3">
+      <div class="columns is-variable is-2">
         <div class="column">
           <label class="label">Start datetime</label>
           <input id="start" class="input" type="datetime-local" required />
@@ -209,7 +221,7 @@
       </div>
 
       <!-- Search filters (initially visible) -->
-      <div id="filtersBox" class="box p-4 mb-4">
+      <div id="filtersBox" class="box p-4">
         <div id="filtersGrid" class="columns is-multiline"></div>
       </div>
 
@@ -236,11 +248,11 @@
       <span></span>
     </div>
 
-    <div class="has-text-centered mt-3">
+    <div class="has-text-centered">
       <button id="csvBtn" class="button is-link is-light" disabled>Download CSV</button>
     </div>
 
-    <div class="mt-4 has-text-centered">Copyright @ 2025. All Rights Reserved by Multycomm</div>
+    <div class="mt-1 has-text-centered">Copyright @ 2025. All Rights Reserved by Multycomm</div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.2/build/global/luxon.min.js"></script>
